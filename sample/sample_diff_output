@@ -1,0 +1,336 @@
+diff --git a/generated/schema.ts b/generated/schema.ts
+index 59bb767..17fd309 100644
+--- a/generated/schema.ts
++++ b/generated/schema.ts
+@@ -2825,23 +2825,6 @@ export class UserOp extends Entity {
+       "erc721Transfers"
+     );
+   }
+-
+-  get functionSignature(): string | null {
+-    let value = this.get("functionSignature");
+-    if (!value || value.kind == ValueKind.NULL) {
+-      return null;
+-    } else {
+-      return value.toString();
+-    }
+-  }
+-
+-  set functionSignature(value: string | null) {
+-    if (!value) {
+-      this.unset("functionSignature");
+-    } else {
+-      this.set("functionSignature", Value.fromString(<string>value));
+-    }
+-  }
+ }
+ 
+ export class Log extends Entity {
+@@ -3732,74 +3715,6 @@ export class Withdrawn extends Entity {
+   }
+ }
+ 
+-export class UnHandledFunctionSignature extends Entity {
+-  constructor(id: string) {
+-    super();
+-    this.set("id", Value.fromString(id));
+-  }
+-
+-  save(): void {
+-    let id = this.get("id");
+-    assert(
+-      id != null,
+-      "Cannot save UnHandledFunctionSignature entity without an ID"
+-    );
+-    if (id) {
+-      assert(
+-        id.kind == ValueKind.STRING,
+-        `Entities of type UnHandledFunctionSignature must have an ID of type String but the id '${id.displayData()}' is of type ${id.displayKind()}`
+-      );
+-      store.set("UnHandledFunctionSignature", id.toString(), this);
+-    }
+-  }
+-
+-  static loadInBlock(id: string): UnHandledFunctionSignature | null {
+-    return changetype<UnHandledFunctionSignature | null>(
+-      store.get_in_block("UnHandledFunctionSignature", id)
+-    );
+-  }
+-
+-  static load(id: string): UnHandledFunctionSignature | null {
+-    return changetype<UnHandledFunctionSignature | null>(
+-      store.get("UnHandledFunctionSignature", id)
+-    );
+-  }
+-
+-  get id(): string {
+-    let value = this.get("id");
+-    if (!value || value.kind == ValueKind.NULL) {
+-      throw new Error("Cannot return null for a required field.");
+-    } else {
+-      return value.toString();
+-    }
+-  }
+-
+-  set id(value: string) {
+-    this.set("id", Value.fromString(value));
+-  }
+-
+-  get count(): BigInt {
+-    let value = this.get("count");
+-    if (!value || value.kind == ValueKind.NULL) {
+-      throw new Error("Cannot return null for a required field.");
+-    } else {
+-      return value.toBigInt();
+-    }
+-  }
+-
+-  set count(value: BigInt) {
+-    this.set("count", Value.fromBigInt(value));
+-  }
+-
+-  get userOps(): UserOpLoader {
+-    return new UserOpLoader(
+-      "UnHandledFunctionSignature",
+-      this.get("id")!.toString(),
+-      "userOps"
+-    );
+-  }
+-}
+-
+ export class AccountLoader extends Entity {
+   _entity: string;
+   _field: string;
+diff --git a/schema.graphql b/schema.graphql
+index 8d8ee3e..e359752 100644
+--- a/schema.graphql
++++ b/schema.graphql
+@@ -236,7 +236,6 @@ type UserOp @entity {
+     logs: [Log!] @derivedFrom(field: "userOp")
+     erc20Transfers: [ERC20Transfer!] @derivedFrom(field: "userOp")
+     erc721Transfers: [ERC721Transfer!] @derivedFrom(field: "userOp")
+-    functionSignature: UnHandledFunctionSignature
+ }
+ 
+ type Log @entity {
+@@ -302,9 +301,3 @@ type Withdrawn @entity(immutable: true) {
+     blockTimestamp: BigInt!
+     transactionHash: Bytes!
+ }
+-
+-type UnHandledFunctionSignature @entity {
+-    id: ID!
+-    count: BigInt!
+-    userOps: [UserOp!]! @derivedFrom(field: "functionSignature")
+-}
+\ No newline at end of file
+diff --git a/src/entry-point.ts b/src/entry-point.ts
+index 8f4fd51..bd998cd 100644
+--- a/src/entry-point.ts
++++ b/src/entry-point.ts
+@@ -9,7 +9,7 @@ import {
+   UserOperationRevertReason as UserOperationRevertReasonEvent,
+   Withdrawn as WithdrawnEvent,
+   EntryPoint,
+-  UserOperationEvent  
++  UserOperationEvent
+ } from "../generated/EntryPoint/EntryPoint"
+ import {
+   Account,
+@@ -25,8 +25,7 @@ import {
+   Bundle,
+   UserOpCounter,
+   Beneficiary,
+-  Paymaster,
+-  UnHandledFunctionSignature
++  Paymaster
+ } from "../generated/schema"
+ import {
+   AddressType,
+@@ -141,47 +140,6 @@ export function handleStakeWithdrawn(event: StakeWithdrawnEvent): void {
+   entity.save()
+ }
+ 
+-/* @dev params:
+-  event: the UserOperationEven triggering the handler
+-  userOp: The UserOp object being updated
+-  id: Unique id of the UserOp
+-  decodedUserOpInput: UserOpTuple Representing the data decoded from the UserOp Calldata
+-  userOpCa
+-*/
+-export function updateUserOpWithDecodedData(event: UserOperationEvent, userOp: UserOp, id: string, decodedUserOpInputs: UserOpTuple, userOpInputCalldata: string): void {
+-  const decodedTargetString = '0x' + decodedUserOpInputs.callData.toHexString().slice(34, 74);
+-  const decodedTargetAddress = Address.fromHexString(decodedTargetString);
+-  userOp.target = decodedTargetAddress;
+-  userOp.accountTarget = decodedTargetAddress.toHex();
+-  updateAccountWhenUserOpOccurs(decodedTargetAddress, "Target", id)
+-
+-  userOp.callData = decodedUserOpInputs.callData;
+-
+-  const beneficiaryAddressString = "0x" + userOpInputCalldata.slice(98, 138).toString();
+-  const beneficiaryAddress = Address.fromHexString(beneficiaryAddressString);
+-  userOp.beneficiary = beneficiaryAddress;
+-  updateBeneficiaryWhenUserOpOccurs(beneficiaryAddress, id), 
+-  updateBeneficiaryToBundle(event.transaction.hash.toHex(), beneficiaryAddress);
+-  storeAddress(beneficiaryAddress, AddressType.BENEFICIARY);
+-
+-  const factoryAddressString = decodedUserOpInputs.initCode.toHexString().slice(0, 42);
+-  const factoryAddress = Address.fromHexString(factoryAddressString);
+-  userOp.factory = factoryAddress;
+-  if (factoryAddress.toHexString() != "0x") {
+-    storeAddress(event.params.sender, AddressType.WALLET);
+-    storeAddress(factoryAddress, AddressType.FACTORY);
+-  }
+-
+-  userOp.maxFeePerGas = decodedUserOpInputs.maxFeePerGas;
+-  userOp.initCode = decodedUserOpInputs.initCode;
+-  userOp.maxPriorityFeePerGas = decodedUserOpInputs.maxPriorityFeePerGas;
+-  userOp.preVerificationGas = decodedUserOpInputs.preVerificationGas;
+-  userOp.verificationGasLimit = decodedUserOpInputs.verificationGasLimit;
+-  userOp.callGasLimit = decodedUserOpInputs.callGasLimit;
+-  userOp.paymasterAndData = decodedUserOpInputs.paymasterAndData;
+-  userOp.signature = decodedUserOpInputs.signature;
+-}
+-
+ export function handleUserOperationEvent(event: UserOperationEventEvent): void {
+   let userOpCount = getUserOpCount(event.params.userOpHash, "normal");
+   let id = event.params.userOpHash.toHex() + '-' + userOpCount.toString()
+@@ -191,8 +149,6 @@ export function handleUserOperationEvent(event: UserOperationEventEvent): void {
+   }
+ 
+   updateEntitiesFromUserOpEvent(event, id);
+-  const nonce = event.params.nonce;
+-  const entrypoint = dataSource.address();
+ 
+   userOp.userOpHash = event.params.userOpHash
+   userOp.transactionHash = event.transaction.hash
+@@ -204,7 +160,7 @@ export function handleUserOperationEvent(event: UserOperationEventEvent): void {
+   userOp.paymaster = event.params.paymaster
+   userOp.paymasterLink = event.params.paymaster.toHex()
+   
+-  userOp.nonce = nonce;
++  userOp.nonce = event.params.nonce
+   userOp.actualGasCost = event.params.actualGasCost
+   userOp.actualGasUsed = event.params.actualGasUsed
+   userOp.success = event.params.success
+@@ -215,43 +171,37 @@ export function handleUserOperationEvent(event: UserOperationEventEvent): void {
+   userOp.gasPrice = event.transaction.gasPrice
+   userOp.baseFeePerGas = event.block.baseFeePerGas
+   userOp.bundler = event.transaction.from
+-  userOp.entryPoint = entrypoint;
++  userOp.entryPoint = dataSource.address();
+   log.info("UserOp: {}", [dataSource.address().toHexString()])
+   userOp.accountTarget = ""
+ 
+-  const inputSignatureByteString = event.transaction.input.toHexString().slice(2, 10);
+-  const txnInput = event.transaction.input.toHexString();
+-  let userOpCalldataInput: string = txnInput;
+-  let decodedUserOpInputs: UserOpTuple;
+-  // const decodedUserOpInputs = decodeUserOpInput(txnInput, nonce);
+-  // decodedUserOpInputs = decodeUserOpInput(txnInput, nonce);
+-
+-  if (inputSignatureByteString == '1fad948c') {
+-    decodedUserOpInputs = decodeUserOpInput(txnInput, nonce);
+-  } else if (inputSignatureByteString == '3f707e6b') {
+-      // Handle execute((address,uint256,bytes)[]) Signature
+-      const decodeEntrypointTxn = decodeExecuteTxn(txnInput, entrypoint);
+-      if (decodeEntrypointTxn.calldata) {
+-        userOpCalldataInput = decodeEntrypointTxn.calldata.toHexString();
+-        decodedUserOpInputs = decodeUserOpInput(userOpCalldataInput, nonce);
+-      }
+-  } 
+-
+-  if (decodedUserOpInputs != null) {
+-    updateUserOpWithDecodedData(event, userOp, id, decodedUserOpInputs, userOpCalldataInput);
+-  } else {
+-    // Store Signatures Not Handle When One is Encountered
+-    let unhandledFunctionSignture = UnHandledFunctionSignature.load(inputSignatureByteString);
+-    if (unhandledFunctionSignture == null) {
+-      unhandledFunctionSignture = new UnHandledFunctionSignature(inputSignatureByteString);
+-      unhandledFunctionSignture.count = BIGINT_ONE;
+-    } else {
+-      unhandledFunctionSignture.count += BIGINT_ONE;
++  if (event.transaction.input.toHexString().slice(2, 10) == "1fad948c") {
++    const decodedUserOpInputs = decodeUserOpInput(event.transaction.input.toHexString(), event.params.nonce);
++
++    userOp.target = Address.fromHexString('0x' + decodedUserOpInputs.callData.toHexString().slice(34, 74));
++    userOp.accountTarget = Address.fromHexString('0x' + decodedUserOpInputs.callData.toHexString().slice(34, 74)).toHex();
++    updateAccountWhenUserOpOccurs(Address.fromHexString('0x' + decodedUserOpInputs.callData.toHexString().slice(34, 74)), "Target", id)
++    userOp.callData = decodedUserOpInputs.callData;
++    userOp.factory = Address.fromHexString(decodedUserOpInputs.initCode.toHexString().slice(0, 42));
++    userOp.beneficiary = Address.fromHexString("0x" + event.transaction.input.toHexString().slice(98, 138).toString());
++    updateBeneficiaryWhenUserOpOccurs(Address.fromHexString("0x" + event.transaction.input.toHexString().slice(98, 138).toString()), id), 
++    updateBeneficiaryToBundle(event.transaction.hash.toHex(), Address.fromHexString("0x" + event.transaction.input.toHexString().slice(98, 138).toString()));
++    userOp.maxFeePerGas = decodedUserOpInputs.maxFeePerGas;
++    userOp.initCode = decodedUserOpInputs.initCode;
++    userOp.maxPriorityFeePerGas = decodedUserOpInputs.maxPriorityFeePerGas;
++    userOp.preVerificationGas = decodedUserOpInputs.preVerificationGas;
++    userOp.verificationGasLimit = decodedUserOpInputs.verificationGasLimit;
++    userOp.callGasLimit = decodedUserOpInputs.callGasLimit;
++    userOp.paymasterAndData = decodedUserOpInputs.paymasterAndData;
++    userOp.signature = decodedUserOpInputs.signature;
++
++    if (Address.fromHexString(decodedUserOpInputs.initCode.toHexString().slice(0, 42)).toHexString() != "0x") {
++      storeAddress(event.params.sender, AddressType.WALLET);
++      storeAddress(Address.fromHexString(decodedUserOpInputs.initCode.toHexString().slice(0, 42)), AddressType.FACTORY);
+     }
+-    unhandledFunctionSignture.save();
+-    userOp.functionSignature = inputSignatureByteString;
+   }
+ 
++  storeAddress(Address.fromHexString("0x" + event.transaction.input.toHexString().slice(98, 138).toString()), AddressType.BENEFICIARY);
+   if (event.params.paymaster.toHexString() != "0x0000000000000000000000000000000000000000") {
+     storeAddress(event.params.paymaster, AddressType.PAYMASTER);
+   }
+@@ -407,49 +357,10 @@ export class UserOpTuple extends ethereum.Tuple {
+   }
+ }
+ 
+-export class TxnDecodeTuple extends ethereum.Tuple {
+-  get target(): Address {
+-    return this[0].toAddress();
+-  }
+-
+-  get value(): BigInt {
+-    return this[1].toBigInt();
+-  }
+-
+-  get calldata(): Bytes {
+-    return this[2].toBytes();
+-  }
+-}
+-
+-function decodeCalldata(calldata: string, functionSignatureABI: string): ethereum.Value | null {
+-  const inputParams = Bytes.fromHexString(calldata.slice(10));
+-  const decoded = ethereum.decode(functionSignatureABI, inputParams);
+-  return decoded;
+-}
+-
+-// Specific to the signature 3f707e6b
+-function decodeExecuteTxn(calldata: string, entrypoint: Address): TxnDecodeTuple {
+-  const functionSigABI = "(address,uint256,bytes)[]";
+-  const decoded = decodeCalldata(calldata, functionSigABI);
+-
+-  if (decoded == null) {
+-    return new TxnDecodeTuple;
+-  }
+-
+-  const txnTupleArray = decoded.toTupleArray<TxnDecodeTuple>();
+-  for (let i = 0; i < txnTupleArray.length; i++) {
+-    if (txnTupleArray[i].target == entrypoint) {
+-      return txnTupleArray[i];
+-    }
+-  }
+-  return new TxnDecodeTuple;
+-}
+-
+-// Specific to the signature 1fad948c
+ function decodeUserOpInput(userOpInput: string, nonce: BigInt): UserOpTuple {
+-  const functionSigABI = "(address,uint256,bytes,bytes,uint256,uint256,uint256,uint256,uint256,bytes,bytes)[]";
+-  const decoded = decodeCalldata(userOpInput, functionSigABI)
++  const inputParams = Bytes.fromHexString(userOpInput.slice(10));
+ 
++  const decoded = ethereum.decode("(address,uint256,bytes,bytes,uint256,uint256,uint256,uint256,uint256,bytes,bytes)[]", inputParams);
+   if (decoded == null) {
+     return new UserOpTuple;
+   }

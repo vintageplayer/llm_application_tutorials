@@ -1,5 +1,5 @@
-# LLM Application Tutorials
+# Automatic Code Review
 
-Trying out different LLM application tutorials online.
+Based on [Article](https://www.packtpub.com/article-hub/build-a-project-that-automates-your-code-review)
 
-Each is present in a different branch
+[Source Code](https://github.com/lusob/ChatGPTCodeReviewer)
