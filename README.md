@@ -1,5 +1,3 @@
-# LLM Application Tutorials
+# Cover Letter Generator
 
-Trying out different LLM application tutorials online.
-
-Each is present in a different branch
+Based on [Article](https://towardsdatascience.com/creating-a-cover-letter-generator-using-python-and-gpt-3-297a6b2a3886)
