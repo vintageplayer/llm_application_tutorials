@@ -1,0 +1,7 @@
+Following paragraphs are chunk of summaries. Combine and rewrite them in an elaborated fashion:
+
+
+<<CONTENT>>
+
+
+CONTENT:
